@@ -1,0 +1,329 @@
+---
+title: "Multinomial classification with tidymodels using the TidyTuesday volcano data"
+author: "Julie Silge modified by John Lewis"
+date: "7/30/2020"
+output:
+  html_document
+---
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidymodels)
+library(vip)
+theme_set(theme_light())
+```
+
+#### Load the data
+```{r data}
+volcano_raw <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-05-12/volcano.csv")
+```
+
+#### For a complete source of information of this dataset please see the following page
+
+<https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-05-12/readme.md>
+
+```{r}
+dim(volcano_raw)
+glimpse(volcano_raw)
+
+#Explore the data
+#Our modeling goal is to predict the type of volcano from one of the #TidyTuesday
+#dataset based on other volcano characteristics like latitude, longitude, tectonic
+#setting, etc. There are more than just two types of volcanoes, so this is an example
+#of multiclass or multinomial classification instead of binary classification.
+#Let’s use a random forest model, because this type of model performs well with
+#defaults.
+
+volcano_raw %>%
+  count(primary_volcano_type, sort = TRUE)
+```
+
+```{r}
+#probably too many types of volcanoes for us to build a model for, especially with
+#just 958 examples. Let’s create a new volcano_type variable and build a model to
+#distinguish between four volcano types:
+#stratovolcano
+#shield volcano
+#caldera
+#everything else (other)
+
+#While we use transmute() to create this new variable, let’s also select the
+#variables to use in modeling, like the info about the tectonics around the volcano
+#and the most important rock type.
+
+volcano_df <- volcano_raw %>%
+  transmute(
+    volcano_type = case_when(
+      str_detect(primary_volcano_type, "Stratovolcano") ~ "Stratovolcano",
+      str_detect(primary_volcano_type, "Shield") ~ "Shield",
+      str_detect(primary_volcano_type, "Caldera") ~ "Caldera",
+      TRUE ~ "Other"
+    ),
+    volcano_number, latitude, longitude, elevation,
+    tectonic_settings, major_rock_1
+  ) %>%
+  mutate_if(is.character, factor)
+
+volcano_df %>%
+  count(volcano_type, sort = TRUE)
+
+#not a lot of data to be building a random forest model but nice for mapping
+```
+
+<h2>Location of Volcanoes</h2>
+
+```{r plot1, warnings=FALSE, fig.align = 'center', out.width = "100%", out.height="60%"}
+world <- map_data("world")
+
+ggplot() +
+  geom_map(
+    data = world, map = world,
+    aes(long, lat, map_id = region),
+    color = "white", fill = "gray50", size = 0.05, alpha = 0.2
+  ) +
+  geom_point(
+    data = volcano_df,
+    aes(longitude, latitude, color = volcano_type),
+    alpha = 0.8
+  ) +
+  labs(x = NULL, y = NULL, color = NULL)
+```
+
+```{r warings=FALSE}
+
+#Instead of splitting this small-ish dataset into training and testing data,
+#let’s create a set of bootstrap resamples.
+
+set.seed(456)
+volcano_boot <- bootstraps(volcano_df)
+
+volcano_boot
+
+#Let’s train our multinomial classification model on these resamples, but keep in
+#mind that the performance estimates can be somewhat biased.
+
+#we could use SMOTE to upsampling (via the themis package) in order to balance the classes #but we are using a random forest so ,at least on the first run not do this
+
+volcano_rec <- recipe(volcano_type ~ ., data = volcano_df) %>%
+  update_role(volcano_number, new_role = "Id") %>%
+  step_other(tectonic_settings) %>%
+  step_other(major_rock_1) %>%
+  step_dummy(tectonic_settings, major_rock_1) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors()) 
+
+# 1) we update the role for volcano number, since this is a variable we want to keep
+# around for convenience as an identifier for rows but is not a predictor or outcome.
+# 2) There are a lot of different tectonic setting and rocks in this dataset, so let’s
+# collapse some of the less frequently occurring levels into an "Other" category,
+# for each predictor.
+# 3) we can create indicator variables and remove variables with zero variance.
+# 4) Before oversampling, we center and scale (i.e. normalize) all the predictors.
+
+
+volcano_prep <- prep(volcano_rec)
+juice(volcano_prep) # just to look at our recipe
+
+#Build a model
+rf_spec <- rand_forest(trees = 1000) %>%
+  set_mode("classification") %>%
+  set_engine("ranger")
+
+#workflow
+volcano_wf <- workflow() %>%
+  add_recipe(volcano_rec) %>%
+  add_model(rf_spec)
+
+volcano_wf
+#Now we can run our model without using prep & juice
+
+#fit our workflow info to the resample data - using bootstrapping instead of cv
+
+volcano_res <- fit_resamples(
+  volcano_wf,
+  resamples = volcano_boot,
+  control = control_resamples(save_pred = TRUE)
+)
+```
+
+
+## Review of terminology of performance metrics (not exhaustive)
+
+#### <B>accuracy</B> - the proportion of the data that are predicted correctly
+
+#### <B>ppv</B> - a measurement system compared to a reference result (the "truth" or gold                   standard)
+
+#### <B>sensitivity</B> - the true positive value or the proportion of actual positives                             that are correctly identified
+
+#### <B>specificity</B> - the true negative value or the proportion of actual negatives                             that are correctly identified
+
+#### <B>roc_auc</B> - a metric that computes the area under the ROC curve
+
+
+
+
+### Tidymodels syntax for classification metrics
+
+#### prediction for label types
+
+* `type = "class"`
+
+`predict(volcano_fit, newdata=volcano_test, type = "class")`
+
+#### prediction for probabilities
+
+* `type = "prob"`
+
+`predict(volcano_fit, newdata=volcano_test, type = "prob")`
+
+#### in addition:
+
+* `quantile`
+
+* `numeric` -this category for regression metrics-
+
+#### there are other prediction types-please see:
+<https://yardstick.tidymodels.org/reference/index.html>
+
+
+
+
+### Explore results
+
+#### One of the biggest differences when working with multiclass problems is that your performance metrics are different from a two class problem
+
+```{r}
+volcano_res %>%
+  collect_metrics()
+```
+
+
+<h3>Confusion matrix - calculates a cross-tabulation of observed and predicted classes</h3>
+
+```{r}
+volcano_con <-  volcano_res %>%
+  collect_predictions() %>%
+  conf_mat(volcano_type, .pred_class)
+volcano_con %>%
+  autoplot(type="heatmap")
+```
+
+### Below is a list of metrics from which to chose 
+
+```{r}
+summary(volcano_con)
+```
+
+### We computed accuracy and AUC during fit_resamples(), but we can always go back and compute other metrics we are interested in if we saved the predictions. We can even group_by() resample, if we like.
+
+
+```{r}
+#ppv - positive predictive value
+volcano_res %>%
+  collect_predictions() %>%
+  group_by(id) %>%
+  ppv(volcano_type, .pred_class)
+
+#roc results of bootstrap resampled rf model
+volcano_res %>%
+  collect_predictions() %>%
+  group_by(id) %>%
+  roc_auc(volcano_type,.pred_Caldera:.pred_Stratovolcano)
+```
+
+<h2>Looking for the important variables driving the model results</h2>
+
+```{r plot2, warnings=FALSE,messages=FALSE}
+
+rf_spec %>%
+  set_engine("ranger", importance = "permutation") %>%
+  fit(
+    volcano_type ~ .,
+    data = juice(volcano_prep) %>%
+      select(-volcano_number) %>%
+      janitor::clean_names()
+  ) %>%
+  vip(geom = "point")
+
+#Let’s join the predictions back to the original data.
+
+volcano_pred <- volcano_res %>%
+  collect_predictions() %>%
+  mutate(correct = volcano_type == .pred_class) %>%
+  left_join(volcano_df %>%
+    mutate(.row = row_number()))
+
+
+volcano_tab <- volcano_pred %>%
+  select(volcano_type,.pred_class,.pred_Caldera:.pred_Stratovolcano)
+# Predicted vs Observed (with probabilities)
+knitr::kable(head(volcano_tab,n=15))
+```
+
+
+### Number of correct vs non-correct
+
+```{r}
+volcano_pred %>% count(correct==TRUE)
+```
+
+
+<h3>Example of a ROC curve</h3>
+
+<img src="images/modeling-process-roc-1.png" alt="ROC curve"                               style="width:477px;height:433px;">
+
+Source:Boehmke, B. and Greenwell, B., 2020: Hands-On Machine Learning with R, CRC Press, NY.
+
+### ROC for the 4 Volcano Types
+```{r plot3}
+volcano_pred %>%
+   roc_curve(volcano_type, .pred_Caldera:.pred_Stratovolcano) %>%
+    autoplot()
+```
+
+### If you look through the performance results for the rf model, we certainly are not doing great!
+
+#### The spatial information appears really important for the model, along with the presence of basalt and a subduction zone. Let’s explore the spatial information a bit further, and make a map showing how right or wrong our modeling is across the world.
+
+#### We'll make a map using stat_summary_hex(). Within each hexagon, let’s take the mean of correct values to find what percentage of volcanoes were classified correctly, across all our bootstrap resamples.
+
+
+
+
+
+```{r plot4, warnings=FALSE, out.width = "100%", out.height="60%"}
+ggplot() +
+  geom_map(
+    data = world, map = world,
+    aes(long, lat, map_id = region),
+    color = "white", fill = "gray80", size = 0.05, alpha = 0.5
+  ) +
+  stat_summary_hex(
+    data = volcano_pred,
+    aes(longitude, latitude, z = as.integer(correct)),
+    fun = "mean",
+    alpha = 0.7, bins = 50
+  ) +
+  scale_fill_gradient(high = "cyan3", labels = scales::percent) +
+  theme_light() +
+  labs(x = NULL, y = NULL, fill = "Percent classified\ncorrectly")+
+  ggtitle("Classification of Volcano Types")
+```
+
+## The mapped results portray a much better picture. So the binning and spatial smoothing helped reduce some of the variance providing a much increased correct percentages in the spatial distribution of the 4 volcano types. 
+
+
+---
+
+### For further information on the analysis of the volcano dataset, please look at the following web sites:
+
+<https://rpubs.com/rhibarb6/volcano>
+
+<https://www.youtube.com/watch?v=vnxTGYL3C1M> (tidyXep10)
+
+<https://juliasilge.com/blog/multinomial-volcano-eruptions/>
+(Silge's multinomial presentation)
+
+
+

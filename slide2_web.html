@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Deeper Dive into Tidymodels for Machine Learning in R</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="John Lewis" />
+    <script src="slide2_web_files/htmlwidgets-1.5.1/htmlwidgets.js"></script>
+    <script src="slide2_web_files/jquery-1.12.4/jquery.min.js"></script>
+    <link href="slide2_web_files/datatables-css-0.0.0/datatables-crosstalk.css" rel="stylesheet" />
+    <script src="slide2_web_files/datatables-binding-0.15/datatables.js"></script>
+    <link href="slide2_web_files/dt-core-1.10.20/css/jquery.dataTables.min.css" rel="stylesheet" />
+    <link href="slide2_web_files/dt-core-1.10.20/css/jquery.dataTables.extra.css" rel="stylesheet" />
+    <script src="slide2_web_files/dt-core-1.10.20/js/jquery.dataTables.min.js"></script>
+    <link href="slide2_web_files/crosstalk-1.1.0.1/css/crosstalk.css" rel="stylesheet" />
+    <script src="slide2_web_files/crosstalk-1.1.0.1/js/crosstalk.min.js"></script>
+    <link rel="stylesheet" href="xaringan-themer.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Deeper Dive into Tidymodels for Machine Learning in R
+### John Lewis
+### 2020/04/08 (updated: 2020-08-13)
+
+---
+
+class: center
+
+# Applied Tidymodeling Webinar
+
+&lt;img class="circle" src="images/tidymodels_hex.png" width="400"/&gt;
+
+---
+
+## Modeling in the Tidyverse
+
+###What we will cover:
+
+--
+
+#### 1) Continue working with the Ames data/model but add new predictors
+
+--
+
+#### 2) With added discussion of the bias-variance tradeoff
+
+--
+
+#### 3) Add &amp; compare final results from kNN model, a random forest model and glm (lasso) model
+
+--
+
+#### 4) Discuss 'overfitting' in the context of fitting these three models
+
+--
+
+#### 5) Actually work on a ML classification problem in real time
+
+
+---
+
+# What is tidymodels?
+
+## Analysis Workflow
+
+&lt;img src="images/tidyv-flow.png" width="85%" style="display: block; margin: auto;" /&gt;
+
+---
+class:center
+
+### A reminder-please see the material in my webinar presentation. That workflow will be a template for how the following code structure proceeds. However, the examples included here are more extensive. 
+
+---
+
+
+```r
+library(tidyverse)
+## -- Attaching packages ----------------------------------------------------- tidyverse 1.3.0 --
+## v ggplot2 3.3.2     v purrr   0.3.4
+## v tibble  3.0.3     v dplyr   1.0.1
+## v tidyr   1.1.1     v stringr 1.4.0
+## v readr   1.3.1     v forcats 0.5.0
+## -- Conflicts -------------------------------------------------------- tidyverse_conflicts() --
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()
+library(tidymodels)
+## -- Attaching packages ---------------------------------------------------- tidymodels 0.1.1 --
+## v broom     0.7.0      v recipes   0.1.13
+## v dials     0.0.8      v rsample   0.0.7 
+## v infer     0.5.3      v tune      0.1.1 
+## v modeldata 0.0.2      v workflows 0.1.2 
+## v parsnip   0.1.3      v yardstick 0.0.7
+## -- Conflicts ------------------------------------------------------- tidymodels_conflicts() --
+## x scales::discard() masks purrr::discard()
+## x dplyr::filter()   masks stats::filter()
+## x recipes::fixed()  masks stringr::fixed()
+## x dplyr::lag()      masks stats::lag()
+## x yardstick::spec() masks readr::spec()
+## x recipes::step()   masks stats::step()
+```
+
+---
+
+# Modeling Worflow
+
+![](images/diagram-simple.svg)
+.footnote[Source: Max Kuhn &amp; Davis Vaughan https://github.com/rstudio-conf-2020/applied-ml/blob/master/Part_1.pdf]
+
+---
+## *Exploring the Data*
+
+
+```r
+data(ames, package = "modeldata") #load the data
+nrow(ames)
+```
+
+```
+## [1] 2930
+```
+
+```r
+ncol(ames)
+```
+
+```
+## [1] 74
+```
+
+```r
+DT::datatable(head(ames,15),
+  fillContainer = TRUE, options = list(searching = FALSE, pageLength = 81))
+```
+
+<div id="htmlwidget-863d3e8ac6db48a8f7d7" style="width:100%;height:auto;" class="datatables html-widget"></div>
+<script type="application/json" data-for="htmlwidget-863d3e8ac6db48a8f7d7">{"x":{"filter":"none","fillContainer":true,"data":[["1","2","3","4","5","6","7","8","9","10","11","12","13","14","15"],["One_Story_1946_and_Newer_All_Styles","One_Story_1946_and_Newer_All_Styles","One_Story_1946_and_Newer_All_Styles","One_Story_1946_and_Newer_All_Styles","Two_Story_1946_and_Newer","Two_Story_1946_and_Newer","One_Story_PUD_1946_and_Newer","One_Story_PUD_1946_and_Newer","One_Story_PUD_1946_and_Newer","Two_Story_1946_and_Newer","Two_Story_1946_and_Newer","One_Story_1946_and_Newer_All_Styles","Two_Story_1946_and_Newer","One_Story_1946_and_Newer_All_Styles","One_Story_PUD_1946_and_Newer"],["Residential_Low_Density","Residential_High_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density","Residential_Low_Density"],[141,80,81,93,74,78,41,43,39,60,75,0,63,85,0],[31770,11622,14267,11160,13830,9978,4920,5005,5389,7500,10000,7980,8402,10176,6820],["Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave","Pave"],["No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access","No_Alley_Access"],["Slightly_Irregular","Regular","Slightly_Irregular","Regular","Slightly_Irregular","Slightly_Irregular","Regular","Slightly_Irregular","Slightly_Irregular","Regular","Slightly_Irregular","Slightly_Irregular","Slightly_Irregular","Regular","Slightly_Irregular"],["Lvl","Lvl","Lvl","Lvl","Lvl","Lvl","Lvl","HLS","Lvl","Lvl","Lvl","Lvl","Lvl","Lvl","Lvl"],["AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub","AllPub"],["Corner","Inside","Corner","Corner","Inside","Inside","Inside","Inside","Inside","Inside","Corner","Inside","Inside","Inside","Corner"],["Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl","Gtl"],["North_Ames","North_Ames","North_Ames","North_Ames","Gilbert","Gilbert","Stone_Brook","Stone_Brook","Stone_Brook","Gilbert","Gilbert","Gilbert","Gilbert","Gilbert","Stone_Brook"],["Norm","Feedr","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm"],["Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm","Norm"],["OneFam","OneFam","OneFam","OneFam","OneFam","OneFam","TwnhsE","TwnhsE","TwnhsE","OneFam","OneFam","OneFam","OneFam","OneFam","TwnhsE"],["One_Story","One_Story","One_Story","One_Story","Two_Story","Two_Story","One_Story","One_Story","One_Story","Two_Story","Two_Story","One_Story","Two_Story","One_Story","One_Story"],["Average","Above_Average","Above_Average","Average","Average","Above_Average","Average","Average","Average","Average","Average","Good","Average","Average","Average"],[1960,1961,1958,1968,1997,1998,2001,1992,1995,1999,1993,1992,1998,1990,1985],[1960,1961,1958,1968,1998,1998,2001,1992,1996,1999,1994,2007,1998,1990,1985],["Hip","Gable","Hip","Hip","Gable","Gable","Gable","Gable","Gable","Gable","Gable","Gable","Gable","Gable","Gable"],["CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg","CompShg"],["BrkFace","VinylSd","Wd Sdng","BrkFace","VinylSd","VinylSd","CemntBd","HdBoard","CemntBd","VinylSd","HdBoard","HdBoard","VinylSd","HdBoard","HdBoard"],["Plywood","VinylSd","Wd Sdng","BrkFace","VinylSd","VinylSd","CmentBd","HdBoard","CmentBd","VinylSd","HdBoard","HdBoard","VinylSd","HdBoard","HdBoard"],["Stone","None","BrkFace","None","None","BrkFace","None","None","None","None","None","None","None","None","None"],[112,0,108,0,0,20,0,0,0,0,0,0,0,0,0],["Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Good","Typical","Typical","Typical"],["CBlock","CBlock","CBlock","CBlock","PConc","PConc","PConc","PConc","PConc","PConc","PConc","PConc","PConc","PConc","PConc"],["Good","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical"],["Gd","No","No","No","No","No","Mn","No","No","No","No","No","No","Gd","Av"],["BLQ","Rec","ALQ","ALQ","GLQ","GLQ","GLQ","ALQ","GLQ","Unf","Unf","ALQ","Unf","GLQ","GLQ"],[2,6,1,1,3,3,3,1,3,7,7,1,7,3,3],["Unf","LwQ","Unf","Unf","Unf","Unf","Unf","Unf","Unf","Unf","Unf","Unf","Unf","Unf","BLQ"],[0,144,0,0,0,0,0,0,0,0,0,0,0,0,1120],[441,270,406,1045,137,324,722,1017,415,994,763,233,789,663,0],[1080,882,1329,2110,928,926,1338,1280,1595,994,763,1168,789,1300,1488],["GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA","GasA"],["Fair","Typical","Typical","Excellent","Good","Excellent","Excellent","Excellent","Excellent","Good","Good","Excellent","Good","Good","Typical"],["Y","Y","Y","Y","Y","Y","Y","Y","Y","Y","Y","Y","Y","Y","Y"],["SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr","SBrkr"],[1656,896,1329,2110,928,926,1338,1280,1616,1028,763,1187,789,1341,1502],[0,0,0,0,701,678,0,0,0,776,892,0,676,0,0],[1656,896,1329,2110,1629,1604,1338,1280,1616,1804,1655,1187,1465,1341,1502],[1,0,0,1,0,0,1,0,1,0,0,1,0,1,1],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[1,1,1,2,2,2,2,2,2,2,2,2,2,1,1],[0,0,1,1,1,1,0,0,0,1,1,0,1,1,1],[3,2,3,3,3,3,2,2,2,3,3,3,3,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[7,5,6,8,6,7,6,5,5,7,7,6,7,5,4],["Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ","Typ"],[2,0,0,2,1,1,0,0,1,1,1,0,1,1,0],["Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd","Attchd"],["Fin","Unf","Unf","Fin","Fin","Fin","Fin","RFn","RFn","Fin","Fin","Fin","Fin","Unf","RFn"],[2,1,1,2,2,2,2,2,2,2,2,2,2,2,2],[528,730,312,522,482,470,582,506,608,442,440,420,393,506,528],["Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical","Typical"],["Partial_Pavement","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved","Paved"],[210,140,393,0,212,360,0,0,237,140,157,483,0,192,0],[62,0,36,0,34,36,0,82,152,60,84,21,75,0,54],[0,0,0,0,0,0,170,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,120,0,0,0,0,0,144,0,0,0,0,0,0,140],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],["No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool","No_Pool"],["No_Fence","Minimum_Privacy","No_Fence","No_Fence","Minimum_Privacy","No_Fence","No_Fence","No_Fence","No_Fence","No_Fence","No_Fence","Good_Privacy","No_Fence","No_Fence","No_Fence"],["None","None","Gar2","None","None","None","None","None","None","None","None","Shed","None","None","None"],[0,0,12500,0,0,0,0,0,0,0,0,500,0,0,0],[5,6,6,4,3,6,4,1,3,6,4,3,5,2,6],[2010,2010,2010,2010,2010,2010,2010,2010,2010,2010,2010,2010,2010,2010,2010],["WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD ","WD "],["Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal"],[215000,105000,172000,244000,189900,195500,213500,191500,236500,189000,175900,185000,180400,171500,212000],[-93.619754,-93.619756,-93.6193873,-93.61732,-93.638933,-93.638925,-93.633792,-93.633826,-93.632852,-93.639068,-93.636947,-93.635951,-93.638647,-93.634626,-93.632913],[42.054035,42.053014,42.052659,42.051245,42.060899,42.060779,42.062978,42.060728,42.06112,42.059193,42.05848,42.057419,42.058151,42.057268,42.059169]],"container":"<table class=\"display fill-container\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>MS_SubClass<\/th>\n      <th>MS_Zoning<\/th>\n      <th>Lot_Frontage<\/th>\n      <th>Lot_Area<\/th>\n      <th>Street<\/th>\n      <th>Alley<\/th>\n      <th>Lot_Shape<\/th>\n      <th>Land_Contour<\/th>\n      <th>Utilities<\/th>\n      <th>Lot_Config<\/th>\n      <th>Land_Slope<\/th>\n      <th>Neighborhood<\/th>\n      <th>Condition_1<\/th>\n      <th>Condition_2<\/th>\n      <th>Bldg_Type<\/th>\n      <th>House_Style<\/th>\n      <th>Overall_Cond<\/th>\n      <th>Year_Built<\/th>\n      <th>Year_Remod_Add<\/th>\n      <th>Roof_Style<\/th>\n      <th>Roof_Matl<\/th>\n      <th>Exterior_1st<\/th>\n      <th>Exterior_2nd<\/th>\n      <th>Mas_Vnr_Type<\/th>\n      <th>Mas_Vnr_Area<\/th>\n      <th>Exter_Cond<\/th>\n      <th>Foundation<\/th>\n      <th>Bsmt_Cond<\/th>\n      <th>Bsmt_Exposure<\/th>\n      <th>BsmtFin_Type_1<\/th>\n      <th>BsmtFin_SF_1<\/th>\n      <th>BsmtFin_Type_2<\/th>\n      <th>BsmtFin_SF_2<\/th>\n      <th>Bsmt_Unf_SF<\/th>\n      <th>Total_Bsmt_SF<\/th>\n      <th>Heating<\/th>\n      <th>Heating_QC<\/th>\n      <th>Central_Air<\/th>\n      <th>Electrical<\/th>\n      <th>First_Flr_SF<\/th>\n      <th>Second_Flr_SF<\/th>\n      <th>Gr_Liv_Area<\/th>\n      <th>Bsmt_Full_Bath<\/th>\n      <th>Bsmt_Half_Bath<\/th>\n      <th>Full_Bath<\/th>\n      <th>Half_Bath<\/th>\n      <th>Bedroom_AbvGr<\/th>\n      <th>Kitchen_AbvGr<\/th>\n      <th>TotRms_AbvGrd<\/th>\n      <th>Functional<\/th>\n      <th>Fireplaces<\/th>\n      <th>Garage_Type<\/th>\n      <th>Garage_Finish<\/th>\n      <th>Garage_Cars<\/th>\n      <th>Garage_Area<\/th>\n      <th>Garage_Cond<\/th>\n      <th>Paved_Drive<\/th>\n      <th>Wood_Deck_SF<\/th>\n      <th>Open_Porch_SF<\/th>\n      <th>Enclosed_Porch<\/th>\n      <th>Three_season_porch<\/th>\n      <th>Screen_Porch<\/th>\n      <th>Pool_Area<\/th>\n      <th>Pool_QC<\/th>\n      <th>Fence<\/th>\n      <th>Misc_Feature<\/th>\n      <th>Misc_Val<\/th>\n      <th>Mo_Sold<\/th>\n      <th>Year_Sold<\/th>\n      <th>Sale_Type<\/th>\n      <th>Sale_Condition<\/th>\n      <th>Sale_Price<\/th>\n      <th>Longitude<\/th>\n      <th>Latitude<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"searching":false,"pageLength":81,"columnDefs":[{"className":"dt-right","targets":[3,4,18,19,25,31,33,34,35,40,41,42,43,44,45,46,47,48,49,51,54,55,58,59,60,61,62,63,67,68,69,72,73,74]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[10,25,50,81,100]}},"evals":[],"jsHooks":[]}</script>
+
+---
+
+
+```r
+ames_df &lt;- ames%&gt;%
+      select(Longitude,Latitude,Gr_Liv_Area,Lot_Area,Neighborhood, Year_Built,Sale_Price)
+# use library(GGally) for the accompanying plot
+GGally::ggscatmat(ames_df, alpha = 0.7)
+```
+
+&lt;img src="slide2_web_files/figure-html/unnamed-chunk-3-1.png" width="60%" height="70%" style="display: block; margin: auto;" /&gt;
+
+
+---
+# Now using `rsample`
+## Partitioning - `rsample`
+
+![](images/rsample.png)
+
+---
+
+## `rsample`
+* We want to create the train and test split
+* the three key functions:
+  * `initial_split(data, prop, strata)` (strata - used for stratified sampling) 
+  * `training()`
+  * `testing()`
+
+---
+##*Data Partitioning for Ames*
+### Use rsample    
+
+```r
+set.seed(123)
+ames_split &lt;- initial_split(ames_df, prop = .70)#prop defines the amount of split
+ames_train &lt;- training(ames_split)# our training data
+ames_train%&gt;% 
+  slice(1:10)
+## # A tibble: 10 x 7
+##    Longitude Latitude Gr_Liv_Area Lot_Area Neighborhood Year_Built Sale_Price
+##        &lt;dbl&gt;    &lt;dbl&gt;       &lt;int&gt;    &lt;int&gt; &lt;fct&gt;             &lt;int&gt;      &lt;int&gt;
+##  1     -93.6     42.1        1656    31770 North_Ames         1960     215000
+##  2     -93.6     42.1        1329    14267 North_Ames         1958     172000
+##  3     -93.6     42.1        2110    11160 North_Ames         1968     244000
+##  4     -93.6     42.1        1629    13830 Gilbert            1997     189900
+##  5     -93.6     42.1        1604     9978 Gilbert            1998     195500
+##  6     -93.6     42.1        1338     4920 Stone_Brook        2001     213500
+##  7     -93.6     42.1        1655    10000 Gilbert            1993     175900
+##  8     -93.6     42.1        1187     7980 Gilbert            1992     185000
+##  9     -93.6     42.1        1341    10176 Gilbert            1990     171500
+## 10     -93.6     42.1        1502     6820 Stone_Brook        1985     212000
+```
+
+---
+
+#### This is just an example to show what the test data set looks like-there is no need to do this step
+
+```r
+  ames_test &lt;- testing(ames_split) 
+  ames_test %&gt;% 
+  slice(1:10)
+```
+
+```
+## # A tibble: 10 x 7
+##    Longitude Latitude Gr_Liv_Area Lot_Area Neighborhood    Year_Built Sale_Price
+##        &lt;dbl&gt;    &lt;dbl&gt;       &lt;int&gt;    &lt;int&gt; &lt;fct&gt;                &lt;int&gt;      &lt;int&gt;
+##  1     -93.6     42.1         896    11622 North_Ames            1961     105000
+##  2     -93.6     42.1        1280     5005 Stone_Brook           1992     191500
+##  3     -93.6     42.1        1616     5389 Stone_Brook           1995     236500
+##  4     -93.6     42.1        1804     7500 Gilbert               1999     189000
+##  5     -93.6     42.1        1465     8402 Gilbert               1998     180400
+##  6     -93.6     42.1        3279    53504 Stone_Brook           2003     538000
+##  7     -93.6     42.1        1856    11394 Stone_Brook           2010     394432
+##  8     -93.6     42.1        1004    11241 North_Ames            1970     149000
+##  9     -93.6     42.1        1092     1680 Briardale             1971     105500
+## 10     -93.7     42.1        1940    10159 Northridge_Hei~       2009     395192
+```
+
+---
+### Cross validation (cv) statement for later use
+
+```r
+ames_cv &lt;- vfold_cv(ames_train)# creating the object in order to do cv later
+```
+
+
+---
+# Tidymodels workflow
+
+&lt;img src="images/diagram-packages1.png" width="100%" style="display: block; margin: auto;" /&gt;
+.footnote[Source: Max Kuhn &amp; Davis Vaughan https://github.com/rstudio-conf-2020/applied-ml/blob/master/Part_3.pdf]
+
+---
+# Feature Engineering
+##  `recipes`
+
+![](images/recipes.png)
+
+---
+
+# `recipes`
+
+* preprocessing interface
+
+--
+
+* dplyr-like syntax
+
+--
+
+* tidyselect-like syntax
+
+---
+
+## Defining our `recipe()`
+
+* Our recipe is the plan of action-apply a formula
+* We can, also, add `step_*()`s to our recipe
+* The following is an example of a formula specification
+
+
+```r
+# our formula
+ames_ex &lt;- recipe(Sale_Price ~ Gr_Liv_Area + Lot_Area + Longitude + 
+                  Latitude + Neighborhood + Year_Built,
+                  data = ames_train) #specify our formula
+```
+### Notice that in this model we have added 4 new predictor variables compared to the other webinar example.
+
+---
+
+# Some preprocessing steps
+
+* pre-processing steps are specified with the `step_*()` functions
+
+--
+
+* Some of which are:
+  - `step_dummy()`
+
+--
+
+  - `step_normalize()`
+  
+--
+
+  - `step_rm()`
+  
+--
+
+  - `step_log()`
+  
+--
+
+* Check reference [documentation](https://tidymodels.github.io/recipes/reference/index.html)
+
+---
+
+## preprocessing steps are:
+
+* `dplyr`-like syntax:
+  * `all_predictors()`
+  * `all_outcomes()`
+  * `all_numeric()`
+  * `all_nominal()`
+  
+---
+
+## Just for information sake - these function hardly used anymore since the `workflow` package
+
+### Prepping our `recipe`
+
+* We `prep()` our recipe when we are done specifying the preprocessing steps
+* This prepped recipe can be used to preprocess new data
+
+
+### Preprocessing new data
+
+* We `bake()` our recipe and our ingredients (new data)
+* syntax: `bake(prepped_recipe, new_data)`
+
+
+---
+
+##*Final feature engineering recipe for Ames*
+
+
+```r
+#use recipes
+mod_rec &lt;- recipe(Sale_Price ~ Gr_Liv_Area + Lot_Area + Longitude + 
+                  Latitude + Neighborhood + Year_Built,
+                  data = ames_train) %&gt;% 
+  step_log(Sale_Price, base = 10) %&gt;%
+  step_YeoJohnson(Lot_Area, Gr_Liv_Area) %&gt;%
+  step_other(Neighborhood, threshold = 0.05) %&gt;%
+  step_dummy(all_nominal())%&gt;%
+  step_zv(all_numeric()) %&gt;%
+  step_normalize(all_numeric())
+
+summary(mod_rec)
+```
+
+```
+## # A tibble: 7 x 4
+##   variable     type    role      source  
+##   &lt;chr&gt;        &lt;chr&gt;   &lt;chr&gt;     &lt;chr&gt;   
+## 1 Gr_Liv_Area  numeric predictor original
+## 2 Lot_Area     numeric predictor original
+## 3 Longitude    numeric predictor original
+## 4 Latitude     numeric predictor original
+## 5 Neighborhood nominal predictor original
+## 6 Year_Built   numeric predictor original
+## 7 Sale_Price   numeric outcome   original
+```
+
+
+---
+# What is `parsnip` ?
+
+* General interface for modeling
+
+--
+
+* specifications:
+
+--
+
+  * model
+  
+--
+
+  * mode
+  
+--
+
+  * engine
+
+--
+
+  * fit
+  
+--
+
+* [models](https://tidymodels.github.io/parsnip/reference/index.html)
+
+
+---
+
+## Example
+
+
+```r
+#use parsnip
+knn_mod &lt;-
+  nearest_neighbor(neighbors=tune()) %&gt;%
+  set_engine("kknn")%&gt;%
+  set_mode("regression")
+
+knn_mod
+```
+
+```
+## K-Nearest Neighbor Model Specification (regression)
+## 
+## Main Arguments:
+##   neighbors = tune()
+## 
+## Computational engine: kknn
+```
+
+---
+
+## Use workflow package 
+### Construct a workflow that combines your recipe and your model
+
+
+```r
+ml_wflow &lt;-
+  workflow() %&gt;%
+  add_recipe(mod_rec) %&gt;%
+  add_model(knn_mod)
+```
+
+---
+
+## A problem occurs when we start fitting the training data where the learning algorithm can overfit or underfit the data
+   
+&lt;img src="images/fig11-2_alt.jpg" width="90%" style="display: block; margin: auto;" /&gt;
+.footnote[Source:Rhys, H., 2020: Machine Learning with R, the tidyverse and mlr, Manning, Shelter Island]
+
+---
+## Underfitting and Overfitting
+
+### -models that "underfit" have high bias
+###   reasons: 
+###            1) model used is too simple
+###            2) features used are not informative enough
+
+### -models that "overfit" have high variance
+###            1) model is too complex for the data
+###            2) too many features in relation to the training data
+
+---
+
+### Some definitions
+
+#### *Bias* is the difference between the average prediction of the model and the correct value you are trying to predict. It provides information on how well the model is describing the underlying structure of the data.
+
+#### *Variance* is the error due to the variability in the model's predictive ability for a given point. With high variance there is the risk of overfitting. There may be good performance on the training data but the model will not generalize well to the test (unseen) data. 
+
+.footnote[Source:Boehmke, B. and Greenwell, B., 2020:Hands-On Machine Learning with R, CRC Press, NY.]
+
+---
+## Underfit
+
+&lt;img src="images/modeling-process-bias-model-1.png" width="60%" height="60%" style="display: block; margin: auto;" /&gt;
+__________
+
+## Overfit
+
+&lt;img src="images/modeling-process-variance-model-1.png" width="60%" height="60%" style="display: block; margin: auto;" /&gt;
+.footnote[Source:Boehmke, B. and Greenwell, B., 2020:Hands-On Machine Learning with R, CRC Press, NY.]
+
+---
+## Dealing with Overfitting
+
+### Use &lt;B&gt;regularization&lt;/B&gt; - this encompasses methods that forces the learning algorithm to build less complex models and significantly reduces the variance
+
+
+## This is known as the:
+# .center[&lt;B&gt;Bias-Variance Tradeoff&lt;/B&gt;]
+
+---
+
+.center[# Bias-Variance Tradeoff]
+
+&lt;img src="images/fig3-10.jpg" width="70%" height="60%" style="display: block; margin: auto;" /&gt;
+####Hyperparameter tuning is used to find the "optimum" value for this tradeoff
+.footnote[Source:Rhys, H., 2020: Machine Learning with R, the tidyverse and mlr, Manning, Shelter Island]
+
+
+---
+
+## Diagram of resampling scheme-cross validation(cv-folds) for obtaining the hold-out data sets
+
+![](images/resampling.svg)
+source:https://rviews.rstudio.com/2020/04/21/the-case-for-tidymodels/
+
+
+---
+
+## In cross validation the model, trained on the analysis set, is applied to the assessment set to generate predictions, and performance statistics are computed based on those predictions.
+
+
+---
+
+## In this example, 10-fold CV moves iteratively through the folds and leaves a different 10% out each time for model assessment. At the end of this process, there are 10 sets of performance statistics that were created on 10 data sets that were not used in the modeling process.
+
+![](images/cv.png)
+
+
+---
+## Cross Validation &amp; tuning the knn model
+
+
+```r
+
+set.seed(456)
+ml_wflow_tune &lt;-
+  ml_wflow %&gt;%
+  tune_grid(resamples = ames_cv, # cv object
+                grid = 10, # grid values
+                metrics = metric_set(rmse,rsq))#performance metric of interest 
+
+ml_wflow_tune
+## # Tuning results
+## # 10-fold cross-validation 
+## # A tibble: 10 x 4
+##    splits             id     .metrics          .notes          
+##    &lt;list&gt;             &lt;chr&gt;  &lt;list&gt;            &lt;list&gt;          
+##  1 &lt;split [1.8K/206]&gt; Fold01 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  2 &lt;split [1.8K/205]&gt; Fold02 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  3 &lt;split [1.8K/205]&gt; Fold03 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  4 &lt;split [1.8K/205]&gt; Fold04 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  5 &lt;split [1.8K/205]&gt; Fold05 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  6 &lt;split [1.8K/205]&gt; Fold06 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  7 &lt;split [1.8K/205]&gt; Fold07 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  8 &lt;split [1.8K/205]&gt; Fold08 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+##  9 &lt;split [1.8K/205]&gt; Fold09 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+## 10 &lt;split [1.8K/205]&gt; Fold10 &lt;tibble [20 x 5]&gt; &lt;tibble [0 x 1]&gt;
+```
+
+---
+
+## Resampling allows us to simulate how well our model will perform on new data, and the test set acts as the    final, unbiased check for our model’s performance.
+
+---
+
+
+
+```r
+# Plot tuning performance results over iterations
+
+autoplot(ml_wflow_tune, metric = "rmse") #use quick plot - autoplot function
+```
+
+&lt;img src="slide2_web_files/figure-html/plot1-1.png" width="50%" height="50%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# Model Evalutation: `yardstick`
+
+
+&lt;img src="images/yardstick.png" width="30%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+## `yardstick`
+
+* A package for evaluating models
+
+* Predictions are returned as a `tibble`
+
+* General interface permits easy comparisons
+
+
+---
+
+##*Validation of our model*
+
+
+```r
+# Collecting the metrics
+
+res_kn  &lt;- ml_wflow_tune %&gt;%
+  collect_metrics()
+res_kn
+## # A tibble: 20 x 7
+##    neighbors .metric .estimator  mean     n std_err .config
+##        &lt;int&gt; &lt;chr&gt;   &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt; &lt;chr&gt;  
+##  1         1 rmse    standard   0.540    10  0.0263 Model01
+##  2         1 rsq     standard   0.724    10  0.0240 Model01
+##  3         3 rmse    standard   0.474    10  0.0240 Model02
+##  4         3 rsq     standard   0.776    10  0.0196 Model02
+##  5         5 rmse    standard   0.453    10  0.0238 Model03
+##  6         5 rsq     standard   0.794    10  0.0183 Model03
+##  7         6 rmse    standard   0.449    10  0.0236 Model04
+##  8         6 rsq     standard   0.797    10  0.0179 Model04
+##  9         7 rmse    standard   0.446    10  0.0235 Model05
+## 10         7 rsq     standard   0.800    10  0.0176 Model05
+## 11         9 rmse    standard   0.443    10  0.0233 Model06
+## 12         9 rsq     standard   0.802    10  0.0171 Model06
+## 13        10 rmse    standard   0.443    10  0.0232 Model07
+## 14        10 rsq     standard   0.803    10  0.0169 Model07
+## 15        11 rmse    standard   0.442    10  0.0231 Model08
+## 16        11 rsq     standard   0.803    10  0.0167 Model08
+## 17        13 rmse    standard   0.443    10  0.0228 Model09
+## 18        13 rsq     standard   0.803    10  0.0163 Model09
+## 19        15 rmse    standard   0.444    10  0.0226 Model10
+## 20        15 rsq     standard   0.803    10  0.0160 Model10
+```
+
+---
+
+
+```r
+ # Select the best parameters
+
+best_params &lt;-
+  ml_wflow_tune %&gt;%
+  select_best(metric = "rmse")
+```
+
+---
+
+###Refit using the entire training dataset
+
+
+```r
+ # use of tune and parsnip again
+
+ames_reg_res &lt;-
+  ml_wflow %&gt;%
+  finalize_workflow(best_params)
+
+#make sure you use the initial split data
+ames_wfl_fit &lt;- ames_reg_res %&gt;%
+  last_fit(ames_split)
+```
+
+---
+
+###Getting the final evaluation metrics
+
+
+```r
+# Since we fitted on the train and test data the 
+# metrics have been evaluated for the test data
+
+knn_test_performance &lt;- ames_wfl_fit %&gt;% collect_metrics()
+knn_test_performance
+```
+
+```
+## # A tibble: 2 x 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 rmse    standard       0.434
+## 2 rsq     standard       0.809
+```
+
+---
+
+
+```r
+#extract the test set predictions themselves
+test_predictions &lt;- ames_wfl_fit %&gt;% collect_predictions()
+test_predictions
+```
+
+```
+## # A tibble: 879 x 4
+##    id                .pred  .row Sale_Price
+##    &lt;chr&gt;             &lt;dbl&gt; &lt;int&gt;      &lt;dbl&gt;
+##  1 train/test split -0.796     2     -1.13 
+##  2 train/test split  0.315     8      0.345
+##  3 train/test split  0.993     9      0.862
+##  4 train/test split  0.332    10      0.313
+##  5 train/test split  0.162    13      0.199
+##  6 train/test split  2.32     16      2.87 
+##  7 train/test split  1.87     18      2.11 
+##  8 train/test split -0.541    24     -0.269
+##  9 train/test split -1.29     31     -1.11 
+## 10 train/test split  1.46     39      2.12 
+## # ... with 869 more rows
+```
+
+---
+
+&lt;img src="slide2_web_files/figure-html/plot2-1.png" width="70%" height="70%" style="display: block; margin: auto;" /&gt;
+
+---
+class: center,middle
+
+&lt;h2&gt;&lt;B&gt;Now let's run a random forest model&lt;/B&gt;&lt;/h2&gt;
+
+---
+## Start with parsnips-preprocessing already done
+
+```r
+# random forest model-tuning mtry &amp; min_n, trees=500
+rf_model &lt;- rand_forest(mtry=tune(), min_n=tune(), trees=500)%&gt;%
+  set_mode("regression") %&gt;%
+  set_engine("ranger") 
+```
+  
+---
+
+###Create a workflow object since we are changing the model specifications
+
+```r
+rf_wflow &lt;-
+  workflow() %&gt;%
+  add_recipe(mod_rec) %&gt;%
+  add_model(rf_model)
+```
+
+---
+### Develope grid for hyperparameter search
+#### This is a 2d searching over a predefined parameter space
+
+
+```r
+set.seed(522)
+rf_grid &lt;-  
+  expand_grid(mtry = seq(2, 14, length=7), 
+                    min_n = c(1,2,3,4,5))
+```
+
+---
+
+## For parallel processing
+
+
+```r
+doParallel::registerDoParallel()
+```
+
+---
+## Find best tuned model using rf_grid
+
+
+```r
+set.seed(123)
+
+rf_wflow_tune &lt;-
+  rf_wflow %&gt;%
+  tune_grid(resamples = ames_cv,
+                  grid = rf_grid,
+                  metrics = metric_set(rmse,rsq))
+```
+
+
+---
+
+## Plotting results of tuning hyperparameters
+  
+![](slide2_web_files/figure-html/unnamed-chunk-27-1.png)&lt;!-- --&gt;
+
+---
+## Select best parameters
+
+
+```r
+best_params &lt;-
+  rf_wflow_tune %&gt;%
+  select_best(metric = "rmse")
+
+
+## Refit using the entire dataset
+
+rf_ames_reg_res &lt;-
+  rf_wflow %&gt;%
+  finalize_workflow(best_params)
+
+#make sure you use the initial split data
+rf_ames_wfl_fit &lt;- rf_ames_reg_res %&gt;%
+  last_fit(ames_split)
+```
+
+---
+
+## Since we fitted on the train and then test data the metrics, now, have been evaluated on the test data 
+
+
+```r
+rf_test_performance &lt;- rf_ames_wfl_fit %&gt;% collect_metrics()
+rf_test_performance
+```
+
+```
+## # A tibble: 2 x 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 rmse    standard       0.416
+## 2 rsq     standard       0.825
+```
+
+---
+
+## Extract the test set predictions themselves
+
+```r
+rf_test_predictions &lt;- rf_ames_wfl_fit %&gt;% collect_predictions()
+rf_test_predictions
+## # A tibble: 879 x 4
+##    id                .pred  .row Sale_Price
+##    &lt;chr&gt;             &lt;dbl&gt; &lt;int&gt;      &lt;dbl&gt;
+##  1 train/test split -0.570     2     -1.13 
+##  2 train/test split  0.250     8      0.345
+##  3 train/test split  0.972     9      0.862
+##  4 train/test split  0.399    10      0.313
+##  5 train/test split  0.120    13      0.199
+##  6 train/test split  2.24     16      2.87 
+##  7 train/test split  1.65     18      2.11 
+##  8 train/test split -0.310    24     -0.269
+##  9 train/test split -1.26     31     -1.11 
+## 10 train/test split  1.56     39      2.12 
+## # ... with 869 more rows
+```
+
+---
+
+&lt;img src="slide2_web_files/figure-html/unnamed-chunk-31-1.png" width="70%" height="70%" style="display: block; margin: auto;" /&gt;
+
+
+---
+class: center,middle
+
+&lt;h3&gt;&lt;B&gt;The third model we'll run we be a 'lasso' model using glmnet&lt;/B&gt;&lt;/h3&gt;
+
+---
+## Start again with `parsnips`
+
+```r
+#model specification-using glmnet
+# tuning hyperparameters-penalty. Setting mixture equal to 1
+lasso_spec &lt;- linear_reg(penalty = tune(), mixture = 1) %&gt;%
+  set_engine("glmnet") %&gt;%
+  set_mode("regression")
+```
+
+---
+
+### Workflow
+
+
+```r
+lasso_rec &lt;- mod_rec #using same recipe as before
+# workflow
+lasso_wf &lt;- workflow() %&gt;%
+  add_recipe(lasso_rec) %&gt;%
+  add_model(lasso_spec)
+```
+
+---
+
+
+```r
+lasso_wf
+## == Workflow ==================================================================================
+## Preprocessor: Recipe
+## Model: linear_reg()
+## 
+## -- Preprocessor ------------------------------------------------------------------------------
+## 6 Recipe Steps
+## 
+## * step_log()
+## * step_YeoJohnson()
+## * step_other()
+## * step_dummy()
+## * step_zv()
+## * step_normalize()
+## 
+## -- Model -------------------------------------------------------------------------------------
+## Linear Regression Model Specification (regression)
+## 
+## Main Arguments:
+##   penalty = tune()
+##   mixture = 1
+## 
+## Computational engine: glmnet
+```
+
+---
+
+
+
+## Tuning hyperparameters
+
+#### setting the grid for tuning then tune the model
+
+
+```r
+lambda_grid &lt;- grid_regular(penalty(), levels = 40)
+
+set.seed(123)
+
+lasso_tune &lt;- tune_grid(
+  lasso_wf,
+  resamples = ames_cv,
+  grid = lambda_grid,
+  metrics = metric_set(rmse, rsq)
+)
+```
+
+---
+
+### Plot tuning performance results over iterations
+
+
+```r
+autoplot(lasso_tune, metric = "rmse") 
+```
+
+&lt;img src="slide2_web_files/figure-html/unnamed-chunk-37-1.png" width="50%" height="50%" style="display: block; margin: auto;" /&gt;
+---
+
+## Collected metrics
+
+
+```
+## # A tibble: 80 x 7
+##     penalty .metric .estimator  mean     n std_err .config
+##       &lt;dbl&gt; &lt;chr&gt;   &lt;chr&gt;      &lt;dbl&gt; &lt;int&gt;   &lt;dbl&gt; &lt;chr&gt;  
+##  1 1.00e-10 rmse    standard   0.491    10  0.0193 Model01
+##  2 1.00e-10 rsq     standard   0.758    10  0.0134 Model01
+##  3 1.80e-10 rmse    standard   0.491    10  0.0193 Model02
+##  4 1.80e-10 rsq     standard   0.758    10  0.0134 Model02
+##  5 3.26e-10 rmse    standard   0.491    10  0.0193 Model03
+##  6 3.26e-10 rsq     standard   0.758    10  0.0134 Model03
+##  7 5.88e-10 rmse    standard   0.491    10  0.0193 Model04
+##  8 5.88e-10 rsq     standard   0.758    10  0.0134 Model04
+##  9 1.06e- 9 rmse    standard   0.491    10  0.0193 Model05
+## 10 1.06e- 9 rsq     standard   0.758    10  0.0134 Model05
+## # ... with 70 more rows
+```
+
+
+---
+
+## Inspection of the final `lasso` model
+
+
+```
+## == Workflow ==================================================================================
+## Preprocessor: Recipe
+## Model: linear_reg()
+## 
+## -- Preprocessor ------------------------------------------------------------------------------
+## 6 Recipe Steps
+## 
+## * step_log()
+## * step_YeoJohnson()
+## * step_other()
+## * step_dummy()
+## * step_zv()
+## * step_normalize()
+## 
+## -- Model -------------------------------------------------------------------------------------
+## Linear Regression Model Specification (regression)
+## 
+## Main Arguments:
+##   penalty = 1e-10
+##   mixture = 1
+## 
+## Computational engine: glmnet
+```
+
+---
+
+## **Important variables in the model**
+&lt;img src="slide2_web_files/figure-html/unnamed-chunk-40-1.png" width="70%" height="70%" style="display: block; margin: auto;" /&gt;
+
+---
+
+
+```r
+lasso_final &lt;- last_fit(final_lasso, ames_split)
+
+lf &lt;- lasso_final %&gt;%
+  collect_metrics()
+lf
+## # A tibble: 2 x 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 rmse    standard       0.476
+## 2 rsq     standard       0.771
+
+#extract the test set predictions themselves
+lasso_test_predictions &lt;- lasso_final %&gt;% collect_predictions()
+lasso_test_predictions
+## # A tibble: 879 x 4
+##    id                 .pred  .row Sale_Price
+##    &lt;chr&gt;              &lt;dbl&gt; &lt;int&gt;      &lt;dbl&gt;
+##  1 train/test split -0.787      2     -1.13 
+##  2 train/test split  0.0678     8      0.345
+##  3 train/test split  0.492      9      0.862
+##  4 train/test split  0.388     10      0.313
+##  5 train/test split  0.0822    13      0.199
+##  6 train/test split  2.50      16      2.87 
+##  7 train/test split  1.12      18      2.11 
+##  8 train/test split -0.485     24     -0.269
+##  9 train/test split -0.779     31     -1.11 
+## 10 train/test split  1.60      39      2.12 
+## # ... with 869 more rows
+```
+
+---
+
+&lt;img src="slide2_web_files/figure-html/unnamed-chunk-42-1.png" width="70%" height="70%" style="display: block; margin: auto;" /&gt;
+
+
+---
+&lt;h3&gt;&lt;B&gt;Comparison of model results&lt;/B&gt;&lt;/h3&gt;
+
+<div id="htmlwidget-b6c4979c78c64181bfe6" style="width:100%;height:auto;" class="datatables html-widget"></div>
+<script type="application/json" data-for="htmlwidget-b6c4979c78c64181bfe6">{"x":{"filter":"none","fillContainer":true,"data":[["rmse","rsq"],[0.434091334706849,0.809063017644194],[0.416020154659644,0.824912507450729],[0.476057205627955,0.771239307453866]],"container":"<table class=\"display fill-container\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>knn<\/th>\n      <th>rf<\/th>\n      <th>lasso<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"paging":false,"searching":false,"columnDefs":[{"targets":1,"render":"function(data, type, row, meta) { return DTWidget.formatSignif(data, 3, 3, \",\", \".\"); }"},{"targets":2,"render":"function(data, type, row, meta) { return DTWidget.formatSignif(data, 3, 3, \",\", \".\"); }"},{"targets":3,"render":"function(data, type, row, meta) { return DTWidget.formatSignif(data, 3, 3, \",\", \".\"); }"},{"className":"dt-right","targets":[1,2,3]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":["options.columnDefs.0.render","options.columnDefs.1.render","options.columnDefs.2.render"],"jsHooks":[]}</script>
+
+## Which model would you chose??
+
+--
+
+## Are we finished modelling the Ames data?
+
+--
+
+## Most assuredly not!
+
+
+
+---
+
+# What are some of the things we might do?
+
+--
+
+### 1) Add more specific variables or look at the entire set of variables
+
+--
+
+### 2) Spend more time doing feature engineering
+
+--
+
+### 3) Tune the models more carefully 
+
+--
+
+### 4) Run other types of models - maybe even try other types of ensemble modelling
+
+
+---
+
+class: top, middle
+
+### Now with the time remaining, let's move to a &lt;B&gt;classification&lt;/B&gt; problem
+
+### I'll do this in real time with a R markdown file-"silge9_multinom.Rmd". 
+
+### Otherwise, you can execuate the code chunks on your own time.
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
